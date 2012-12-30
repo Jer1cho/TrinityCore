@@ -1,4 +1,4 @@
-/* Copyright (C) 2007 MySQL AB
+/* Copyright (c) 2007, 2012, Oracle and/or its affiliates. All rights reserved.
 
    This library is free software; you can redistribute it and/or
    modify it under the terms of the GNU Library General Public
@@ -12,7 +12,7 @@
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
-   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA */
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 /****************************************************************
 
@@ -46,7 +46,7 @@
      see if it is possible to get rid of malloc().
      this constant is sufficient to avoid malloc() on all inputs I have tried.
 */
-#define DTOA_BUFF_SIZE (420 * sizeof(void *))
+#define DTOA_BUFF_SIZE (460 * sizeof(void *))
 
 /* Magic value returned by dtoa() to indicate overflow */
 #define DTOA_OVERFLOW 9999
@@ -659,6 +659,7 @@ typedef struct Stack_alloc
 static Bigint *Balloc(int k, Stack_alloc *alloc)
 {
   Bigint *rv;
+  DBUG_ASSERT(k <= Kmax);
   if (k <= Kmax &&  alloc->freelist[k])
   {
     rv= alloc->freelist[k];
@@ -782,7 +783,20 @@ static Bigint *multadd(Bigint *b, int m, int a, Stack_alloc *alloc)
   return b;
 }
 
+/**
+  Converts a string to Bigint.
+  
+  Now we have nd0 digits, starting at s, followed by a
+  decimal point, followed by nd-nd0 digits.  
+  Unless nd0 == nd, in which case we have a number of the form:
+     ".xxxxxx"    or    "xxxxxx."
 
+  @param s     Input string, already partially parsed by my_strtod_int().
+  @param nd0   Number of digits before decimal point.
+  @param nd    Total number of digits.
+  @param y9    Pre-computed value of the first nine digits.
+  @param alloc Stack allocator for Bigints.
+ */
 static Bigint *s2b(const char *s, int nd0, int nd, ULong y9, Stack_alloc *alloc)
 {
   Bigint *b;
@@ -802,10 +816,11 @@ static Bigint *s2b(const char *s, int nd0, int nd, ULong y9, Stack_alloc *alloc)
     do
       b= multadd(b, 10, *s++ - '0', alloc);
     while (++i < nd0);
-    s++;
+    s++;                                        /* skip '.' */
   }
   else
     s+= 10;
+  /* now do the fractional part */
   for(; i < nd; i++)
     b= multadd(b, 10, *s++ - '0', alloc);
   return b;
@@ -1005,9 +1020,10 @@ static Bigint p5_a[]=
 
 static Bigint *pow5mult(Bigint *b, int k, Stack_alloc *alloc)
 {
-  Bigint *b1, *p5, *p51;
+  Bigint *b1, *p5, *p51=NULL;
   int i;
   static int p05[3]= { 5, 25, 125 };
+  my_bool overflow= FALSE;
 
   if ((i= k & 3))
     b= multadd(b, p05[i-1], 0, alloc);
@@ -1026,17 +1042,22 @@ static Bigint *pow5mult(Bigint *b, int k, Stack_alloc *alloc)
     if (!(k>>= 1))
       break;
     /* Calculate next power of 5 */
-    if (p5 < p5_a + P5A_MAX)
-      ++p5;
-    else if (p5 == p5_a + P5A_MAX)
-      p5= mult(p5, p5, alloc);
-    else
+    if (overflow)
     {
       p51= mult(p5, p5, alloc);
       Bfree(p5, alloc);
       p5= p51;
     }
+    else if (p5 < p5_a + P5A_MAX)
+      ++p5;
+    else if (p5 == p5_a + P5A_MAX)
+    {
+      p5= mult(p5, p5, alloc);
+      overflow= TRUE;
+    }
   }
+  if (p51)
+    Bfree(p51, alloc);
   return b;
 }
 
@@ -1395,34 +1416,50 @@ static double my_strtod_int(const char *s00, char **se, int *error, char *buf, s
     c= *++s;
     if (!nd)
     {
-      for (; s < end && c == '0'; c= *++s)
+      for (; s < end; ++s)
+      {
+        c= *s;
+        if (c != '0')
+          break;
         nz++;
+      }
       if (s < end && c > '0' && c <= '9')
       {
         s0= s;
         nf+= nz;
         nz= 0;
-        goto have_dig;
       }
-      goto dig_done;
+      else
+        goto dig_done;
     }
-    for (; s < end && c >= '0' && c <= '9'; c = *++s)
+    for (; s < end; ++s)
     {
- have_dig:
-      nz++;
-      if (c-= '0')
+      c= *s;
+      if (c < '0' || c > '9')
+        break;
+      /*
+        Here we are parsing the fractional part.
+        We can stop counting digits after a while: the extra digits
+        will not contribute to the actual result produced by s2b().
+        We have to continue scanning, in case there is an exponent part.
+       */
+      if (nd < 2 * DBL_DIG)
       {
-        nf+= nz;
-        for (i= 1; i < nz; i++)
+        nz++;
+        if (c-= '0')
+        {
+          nf+= nz;
+          for (i= 1; i < nz; i++)
+            if (nd++ < 9)
+              y*= 10;
+            else if (nd <= DBL_DIG + 1)
+              z*= 10;
           if (nd++ < 9)
-            y*= 10;
+            y= 10*y + c;
           else if (nd <= DBL_DIG + 1)
-            z*= 10;
-        if (nd++ < 9)
-          y= 10*y + c;
-        else if (nd <= DBL_DIG + 1)
-          z= 10*z + c;
-        nz= 0;
+            z= 10*z + c;
+          nz= 0;
+        }
       }
     }
   }

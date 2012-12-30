@@ -1,5 +1,5 @@
 
-# Copyright (C) 2009 Sun Microsystems,Inc
+# Copyright (c) 2009, 2011, Oracle and/or its affiliates. All rights reserved.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -149,7 +149,10 @@ IF(UNIX)
   SET(CMAKE_REQUIRED_LIBRARIES 
     ${LIBM} ${LIBNSL} ${LIBBIND} ${LIBCRYPT} ${LIBSOCKET} ${LIBDL} ${CMAKE_THREAD_LIBS_INIT} ${LIBRT})
 
-  LIST(REMOVE_DUPLICATES CMAKE_REQUIRED_LIBRARIES)
+  LIST(LENGTH CMAKE_REQUIRED_LIBRARIES required_libs_length)
+  IF(${required_libs_length} GREATER 0)
+    LIST(REMOVE_DUPLICATES CMAKE_REQUIRED_LIBRARIES)
+  ENDIF()  
   LINK_LIBRARIES(${CMAKE_THREAD_LIBS_INIT})
   
   OPTION(WITH_LIBWRAP "Compile with tcp wrappers support" OFF)
@@ -345,12 +348,12 @@ CHECK_FUNCTION_EXISTS (fconvert HAVE_FCONVERT)
 CHECK_FUNCTION_EXISTS (fdatasync HAVE_FDATASYNC)
 CHECK_SYMBOL_EXISTS(fdatasync "unistd.h" HAVE_DECL_FDATASYNC)
 CHECK_FUNCTION_EXISTS (fesetround HAVE_FESETROUND)
+CHECK_FUNCTION_EXISTS (fedisableexcept HAVE_FEDISABLEEXCEPT)
 CHECK_FUNCTION_EXISTS (fpsetmask HAVE_FPSETMASK)
 CHECK_FUNCTION_EXISTS (fseeko HAVE_FSEEKO)
 CHECK_FUNCTION_EXISTS (fsync HAVE_FSYNC)
 CHECK_FUNCTION_EXISTS (getcwd HAVE_GETCWD)
 CHECK_FUNCTION_EXISTS (gethostbyaddr_r HAVE_GETHOSTBYADDR_R)
-CHECK_FUNCTION_EXISTS (gethostbyname_r HAVE_GETHOSTBYNAME_R)
 CHECK_FUNCTION_EXISTS (gethrtime HAVE_GETHRTIME)
 CHECK_FUNCTION_EXISTS (getnameinfo HAVE_GETNAMEINFO)
 CHECK_FUNCTION_EXISTS (getpass HAVE_GETPASS)
@@ -363,6 +366,10 @@ CHECK_FUNCTION_EXISTS (getwd HAVE_GETWD)
 CHECK_FUNCTION_EXISTS (gmtime_r HAVE_GMTIME_R)
 CHECK_FUNCTION_EXISTS (initgroups HAVE_INITGROUPS)
 CHECK_FUNCTION_EXISTS (issetugid HAVE_ISSETUGID)
+CHECK_FUNCTION_EXISTS (getuid HAVE_GETUID)
+CHECK_FUNCTION_EXISTS (geteuid HAVE_GETEUID)
+CHECK_FUNCTION_EXISTS (getgid HAVE_GETGID)
+CHECK_FUNCTION_EXISTS (getegid HAVE_GETEGID)
 CHECK_FUNCTION_EXISTS (ldiv HAVE_LDIV)
 CHECK_FUNCTION_EXISTS (localtime_r HAVE_LOCALTIME_R)
 CHECK_FUNCTION_EXISTS (longjmp HAVE_LONGJMP)
@@ -387,7 +394,6 @@ CHECK_FUNCTION_EXISTS (pthread_attr_setscope HAVE_PTHREAD_ATTR_SETSCOPE)
 CHECK_FUNCTION_EXISTS (pthread_attr_setstacksize HAVE_PTHREAD_ATTR_SETSTACKSIZE)
 CHECK_FUNCTION_EXISTS (pthread_condattr_create HAVE_PTHREAD_CONDATTR_CREATE)
 CHECK_FUNCTION_EXISTS (pthread_condattr_setclock HAVE_PTHREAD_CONDATTR_SETCLOCK)
-CHECK_FUNCTION_EXISTS (pthread_init HAVE_PTHREAD_INIT)
 CHECK_FUNCTION_EXISTS (pthread_key_delete HAVE_PTHREAD_KEY_DELETE)
 CHECK_FUNCTION_EXISTS (pthread_rwlock_rdlock HAVE_PTHREAD_RWLOCK_RDLOCK)
 CHECK_FUNCTION_EXISTS (pthread_sigmask HAVE_PTHREAD_SIGMASK)
@@ -488,6 +494,7 @@ CHECK_SYMBOL_EXISTS(getpagesize "unistd.h" HAVE_GETPAGESIZE)
 CHECK_SYMBOL_EXISTS(TIOCGWINSZ "sys/ioctl.h" GWINSZ_IN_SYS_IOCTL)
 CHECK_SYMBOL_EXISTS(FIONREAD "sys/ioctl.h" FIONREAD_IN_SYS_IOCTL)
 CHECK_SYMBOL_EXISTS(TIOCSTAT "sys/ioctl.h" TIOCSTAT_IN_SYS_IOCTL)
+CHECK_SYMBOL_EXISTS(FIONREAD "sys/filio.h" FIONREAD_IN_SYS_FILIO)
 CHECK_SYMBOL_EXISTS(gettimeofday "sys/time.h" HAVE_GETTIMEOFDAY)
 
 CHECK_SYMBOL_EXISTS(finite  "math.h" HAVE_FINITE_IN_MATH_H)
@@ -574,6 +581,7 @@ MY_CHECK_TYPE_SIZE(uint32 UINT32)
 MY_CHECK_TYPE_SIZE(u_int32_t U_INT32_T)
 MY_CHECK_TYPE_SIZE(int64 INT64)
 MY_CHECK_TYPE_SIZE(uint64 UINT64)
+MY_CHECK_TYPE_SIZE(time_t TIME_T)
 SET (CMAKE_EXTRA_INCLUDE_FILES sys/types.h)
 MY_CHECK_TYPE_SIZE(bool  BOOL)
 SET(CMAKE_EXTRA_INCLUDE_FILES)
@@ -592,6 +600,16 @@ ENDIF()
 #
 # Code tests
 #
+
+# check whether time_t is unsigned
+CHECK_C_SOURCE_COMPILES("
+int main()
+{
+  int array[(((time_t)-1) > 0) ? 1 : -1];
+  return 0;
+}"
+TIME_T_UNSIGNED)
+
 
 CHECK_C_SOURCE_COMPILES("
 #ifdef _WIN32
@@ -909,44 +927,6 @@ CHECK_CXX_SOURCE_COMPILES("
     }
   "
   HAVE_SOLARIS_STYLE_GETHOST)
-
-CHECK_CXX_SOURCE_COMPILES("
-    #undef inline
-    #if !defined(SCO) && !defined(__osf__) && !defined(_REENTRANT)
-    #define _REENTRANT
-    #endif
-    #include <pthread.h>
-    #include <sys/types.h>
-    #include <sys/socket.h>
-    #include <netinet/in.h>
-    #include <arpa/inet.h>
-    #include <netdb.h>
-    int main()
-    {
-       int ret = gethostbyname_r((const char *) 0,
-	(struct hostent*) 0, (char*) 0, 0, (struct hostent **) 0, (int *) 0);
-      return 0;
-    }"
-    HAVE_GETHOSTBYNAME_R_GLIBC2_STYLE)
-
-CHECK_CXX_SOURCE_COMPILES("
-    #undef inline
-    #if !defined(SCO) && !defined(__osf__) && !defined(_REENTRANT)
-    #define _REENTRANT
-    #endif
-    #include <pthread.h>
-    #include <sys/types.h>
-    #include <sys/socket.h>
-    #include <netinet/in.h>
-    #include <arpa/inet.h>
-    #include <netdb.h>
-    int main()
-    {
-      int ret = gethostbyname_r((const char *) 0, (struct hostent*) 0, (struct hostent_data*) 0);
-      return 0;
-    }"
-    HAVE_GETHOSTBYNAME_R_RETURN_INT)
-
 
 # Use of ALARMs to wakeup on timeout on sockets
 #

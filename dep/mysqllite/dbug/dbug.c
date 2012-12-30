@@ -1179,7 +1179,7 @@ void _db_return_(uint _line_, struct _db_stack_frame_ *_stack_frame_)
         pthread_mutex_lock(&THR_LOCK_dbug);
       DoPrefix(cs, _line_);
       Indent(cs, cs->level);
-      (void) fprintf(cs->stack->out_file, "<%s\n", cs->func);
+      (void) fprintf(cs->stack->out_file, "<%s %u\n", cs->func, _line_);
       DbugFlush(cs);
     }
   }
@@ -1873,7 +1873,6 @@ static void DBUGOpenFile(CODE_STATE *cs,
                          const char *name,const char *end,int append)
 {
   REGISTER FILE *fp;
-  REGISTER BOOLEAN newfile;
 
   if (name != NULL)
   {
@@ -1902,7 +1901,6 @@ static void DBUGOpenFile(CODE_STATE *cs,
       }
       else
       {
-        newfile= !EXISTS(name);
         if (!(fp= fopen(name, append ? "a+" : "w")))
         {
           (void) fprintf(stderr, ERR_OPEN, cs->process, name);

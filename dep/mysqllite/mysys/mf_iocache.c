@@ -1,4 +1,4 @@
-/* Copyright (C) 2000 MySQL AB, 2008-2009 Sun Microsystems, Inc
+/* Copyright (c) 2000, 2011, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -11,7 +11,7 @@
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
-   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA */
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 /*
   Cashing of files with only does (sequential) read or writes of fixed-
@@ -1528,8 +1528,13 @@ int _my_b_get(IO_CACHE *info)
 int _my_b_write(register IO_CACHE *info, const uchar *Buffer, size_t Count)
 {
   size_t rest_length,length;
+  my_off_t pos_in_file= info->pos_in_file;
 
-  if (info->pos_in_file+info->buffer_length > info->end_of_file)
+  DBUG_EXECUTE_IF("simulate_huge_load_data_file",
+                  {
+                    pos_in_file=(my_off_t)(5000000000ULL);
+                  });
+  if (pos_in_file+info->buffer_length > info->end_of_file)
   {
     my_errno=errno=EFBIG;
     return info->error = -1;
